@@ -4,16 +4,19 @@ param (
     [string]$PathName = "test.txt"
 )
 
+# Load the GitHub Sign Commit script
 . .\Set-GitHubSignCommit.ps1
 
-# Replace with your actual GitHub token securely
+# Ensure the GitHub token is set securely
 $GitHubTokenInstance = [PSCustomObject]@{
-    token = "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    token = $env:GITHUB_TOKEN
 }
 
+# Run the commit signing test
 $results = Set-GitHubSignCommit -RepositoryName $RepositoryName `
                                  -BranchName $BranchName `
                                  -PathName $PathName `
                                  -GitHubTokenInstance $GitHubTokenInstance
 
+# Display the results
 $results | Format-List
