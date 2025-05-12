@@ -1,22 +1,21 @@
 param (
     [string]$RepositoryName = "powershell-signin",
-    [string]$BranchName = "main",
-    [string]$PathName = "test.txt"
+    [string]$BranchName = "main"
 )
 
-# Load the GitHub Sign Commit script
+# Load the GitHub Sign Commit script (the new one)
 . .\Set-GitHubSignCommit.ps1
 
-# Ensure the GitHub token is set securely
+# Set the GitHub token
 $GitHubTokenInstance = [PSCustomObject]@{
     token = $env:GITHUB_TOKEN
 }
 
-# Run the commit signing test
-$results = Set-GitHubSignCommit -RepositoryName $RepositoryName `
-                                 -BranchName $BranchName `
-                                 -PathName $PathName `
-                                 -GitHubTokenInstance $GitHubTokenInstance
+# Run the updated signing process using GitHub API
+$results = Set-GitHubSignLatestCommit -RepositoryName $RepositoryName `
+                                      -BranchName $BranchName `
+                                      -GitHubTokenInstance $GitHubTokenInstance `
+                                      -OwnerName "DivyaGhai"
 
-# Display the results
+# Display the result
 $results | Format-List
