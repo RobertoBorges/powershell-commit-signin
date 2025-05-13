@@ -1,4 +1,4 @@
-name: Sign Commit and Push
+name: Auto-Signed Commit from Actions
 
 on:
   push:
@@ -6,26 +6,21 @@ on:
       - main
 
 permissions:
-  contents: write  # 👈 This is required to allow the workflow to push changes
+  contents: write
 
 jobs:
   sign-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Modify file (example)
+      - name: Modify file
         run: echo "Update on $(date)" >> test.txt
 
       - name: Commit and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git add test.txt
-          git commit -m "Signed commit from workflow"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/DivyaGhai/powershell-signin.git
-          git push origin main
+          git commit -m "Automated commit from GitHub Actions"
+          git push
