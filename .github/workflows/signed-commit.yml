@@ -1,0 +1,28 @@
+name: Signed Commit Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sign-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make file change
+        run: |
+          echo "This is a test change made on $(date)" >> test.txt
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push changes
+        run: |
+          git add test.txt
+          git commit -m "Test commit from GitHub Action"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
