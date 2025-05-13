@@ -1,28 +1,31 @@
-name: Signed Commit Test
+name: Sign Commit and Push
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write  # 👈 This is required to allow the workflow to push changes
 
 jobs:
-  sign-commit:
+  sign-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Make file change
-        run: |
-          echo "This is a test change made on $(date)" >> test.txt
-
-      - name: Configure Git identity
+      - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Commit and push changes
+      - name: Modify file (example)
+        run: echo "Update on $(date)" >> test.txt
+
+      - name: Commit and push
         run: |
           git add test.txt
-          git commit -m "Test commit from GitHub Action"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git commit -m "Signed commit from workflow"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/DivyaGhai/powershell-signin.git
+          git push origin main
