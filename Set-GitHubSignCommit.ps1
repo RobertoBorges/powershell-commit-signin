@@ -3,7 +3,7 @@ function Set-GitHubSignLatestCommit {
         [Parameter(Mandatory = $true)][string]$RepositoryName,
         [Parameter(Mandatory = $true)][string]$BranchName,
         [Parameter(Mandatory = $true)][PSCustomObject]$GitHubTokenInstance,
-        [Parameter()][string]$OwnerName = "YourOrgOrUsername"
+        [Parameter()][string]$OwnerName = "DivyaGhai"
     )
 
     $headers = @{
@@ -56,7 +56,7 @@ function Set-GitHubSignLatestCommit {
     # Now move the branch to point to new commit
     $updateRefUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/git/refs/heads/$BranchName"
     $updatePayload = @{ sha = $newCommit.sha; force = $true } | ConvertTo-Json
-    Invoke-RestMethod -Uri $updateRefUrl -Method PATCH -Headers $headers -Body $updatePayload -ContentType "application/json"
+    Invoke-RestMethod -Uri $updateRefUrl -Method POST -Headers $headers -Body $updatePayload -ContentType "application/json"
 
     Write-Host "✅ Signed and updated branch to commit: $($newCommit.sha)"
 }
