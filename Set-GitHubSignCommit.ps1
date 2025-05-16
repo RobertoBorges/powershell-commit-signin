@@ -33,11 +33,18 @@ function Set-GitHubSignLatestCommit {
     )
 
     $commitText = ($commitTextLines -join "`n") + "`n"
+    $utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
 
     $tempPath = [System.IO.Path]::GetTempFileName()
-    [System.IO.File]::WriteAllText($tempPath, $commitText)
+    [System.IO.File]::WriteAllText($tempPath, $commitText, $utf8NoBomEncoding)
+
     $signature = & gpg --armor --sign --default-key $author.email --detach-sign --output - $tempPath
     Remove-Item $tempPath
+
+    $signature = & gpg --armor --sign --default-key $author.email --detach-sign --output - $tempPath
+    $formattedSignature = ($signature -join "`n") + "`n"
+    # Remove any potential carriage returns that might cause verification issues
+    $formattedSignature = $formattedSignature -replace "`r", ""
 
     $signedCommit = @{
         message    = $commitData.commit.message
@@ -45,7 +52,7 @@ function Set-GitHubSignLatestCommit {
         parents    = @($parentSha)
         author     = $author
         committer  = $committer
-        signature  = ($signature -join "`n") + "`n"
+        signature  = $formattedSignature
     }
 
     $createUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/git/commits"
