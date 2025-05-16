@@ -1,5 +1,5 @@
 param (
-    [string]$RepositoryName = "powershell-signin",
+    [string]$RepositoryName = "powershell-commit-signin",
     [string]$BranchName = "main"
 )
 
@@ -15,7 +15,7 @@ $GitHubTokenInstance = [PSCustomObject]@{
 $results = Set-GitHubSignLatestCommit -RepositoryName $RepositoryName `
                                       -BranchName $BranchName `
                                       -GitHubTokenInstance $GitHubTokenInstance `
-                                      -OwnerName "DivyaGhai"
+                                      -OwnerName "RobertoBorges"
 
 # Display the result
 $results | Format-List
