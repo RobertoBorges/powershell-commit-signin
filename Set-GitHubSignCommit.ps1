@@ -23,26 +23,15 @@ function Set-GitHubSignLatestCommit {
     $author = $commitData.commit.author
     $committer = $commitData.commit.committer
 
-    function Get-TimezoneOffsetString($dateObj) {
-        $offset = $dateObj.ToString("zzz").Replace(":", "")
-        return $offset
-    }
-
-    $authorDateObj = Get-Date $author.date
-    $committerDateObj = Get-Date $committer.date
-
-    $authorTimestamp = $authorDateObj.ToString("yyyy-MM-ddTHH:mm:ssK")
-    $committerTimestamp = $committerDateObj.ToString("yyyy-MM-ddTHH:mm:ssK")
-
     $commitTextLines = @(
         "tree $commitTree",
-        "parents $parentSha",
-        "author $($author.name) <$($author.email)> $authorTimestamp",
-        "committer $($committer.name) <$($committer.email)> $committerTimestamp",
+        "parent $parentSha",
+        "author $($author.name) <$($author.email)> $($author.date)",
         "",
         "$($commitData.commit.message)"
     )
 
+    write-host "Signing commit with GPG... $($commitTextLines), $($commitData) author = $($author.name) <$($author.email), $($author)>"
     $commitText = ($commitTextLines -join "`n") + "`n"
     $utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
 
@@ -58,13 +47,7 @@ function Set-GitHubSignLatestCommit {
     $authorObject = @{
         name  = $author.name
         email = $author.email
-        date  = "$authorTimestamp"
-    }
-
-    $committerObject = @{
-        name  = $committer.name
-        email = $committer.email
-        date  = "$committerTimestamp"
+        date  = $author.date
     }
 
     $signedCommit = @{
@@ -72,7 +55,6 @@ function Set-GitHubSignLatestCommit {
         tree       = $commitTree
         parents    = @($parentSha)
         author     = $authorObject
-        committer  = $committerObject
         signature  = $formattedSignature
     }
 
