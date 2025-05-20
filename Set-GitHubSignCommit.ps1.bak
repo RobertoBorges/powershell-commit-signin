@@ -1,0 +1,225 @@
+<#
+.SYNOPSIS
+    Signs Git commits using the GitHub API to ensure proper signature verification.
+
+.DESCRIPTION
+    This script signs Git commits using GPG and updates them on GitHub through the API.
+    It ensures that the commit signature is properly verified by aligning the commit
+    format used for signing with what GitHub expects.
+
+.NOTES
+    - Requires a GitHub Personal Access Token with appropriate permissions
+    - Requires GPG to be installed and configured with a default signing key
+    - The commit's author email must match the GPG key email
+    - Uses proper Git timestamp formats to ensure signature verification
+
+.EXAMPLE
+    # Set up the GitHub token
+    $GitHubTokenInstance = [PSCustomObject]@{
+        token = "your-github-token"
+    }
+
+    # Sign the latest commit
+    Set-GitHubSignLatestCommit -RepositoryName "your-repo" -BranchName "main" -GitHubTokenInstance $GitHubTokenInstance -OwnerName "your-username"
+#>
+
+function Get-LocalTimezoneOffset {
+    <#
+    .SYNOPSIS
+        Gets the timezone offset in the format Git expects (+0000 or -0000)
+    
+    .DESCRIPTION
+        Returns the timezone offset from a given DateTime object in the format
+        Git expects for author and committer timestamps, which is +HHMM or -HHMM
+        (no colon between hours and minutes).
+        
+    .PARAMETER dateObj
+        The DateTime object to get the timezone from. Defaults to current time.
+        
+    .EXAMPLE
+        Get-LocalTimezoneOffset
+        # Returns something like "-0400" or "+0100" depending on local timezone
+    #>
+    param ([DateTime]$dateObj = (Get-Date))
+    
+    # Get the timezone offset in the format +0000 or -0000
+    $offset = $dateObj.ToString("zzz").Replace(":", "")
+    return $offset
+}
+
+function ConvertTo-GitTimestamp {
+    <#
+    .SYNOPSIS
+        Converts a DateTime to Git's timestamp format
+    
+    .DESCRIPTION
+        Converts a DateTime object to Git's timestamp format, which is a Unix timestamp
+        (seconds since epoch) followed by a space and then the timezone offset.
+        Example: "1618317040 -0400"
+        
+    .PARAMETER dateTime
+        The DateTime object to convert. Defaults to current time.
+        
+    .EXAMPLE
+        ConvertTo-GitTimestamp (Get-Date)
+        # Returns something like "1618317040 -0400"
+    #>
+    param ([DateTime]$dateTime = (Get-Date))
+    
+    # Get Unix timestamp (seconds since epoch)
+    $unixTimestamp = [int][double]::Parse((Get-Date -Date $dateTime -UFormat %s))
+    
+    # Get timezone offset
+    $tzOffset = Get-LocalTimezoneOffset -dateObj $dateTime
+    
+    # Return in Git format: UNIX_TIMESTAMP TIMEZONE_OFFSET
+    return "$unixTimestamp $tzOffset"
+}
+
+function Set-GitHubSignLatestCommit {
+    <#
+    .SYNOPSIS
+        Signs the latest commit in a GitHub repository branch using GPG
+    
+    .DESCRIPTION
+        Signs the latest commit in a GitHub repository branch using GPG, ensuring proper
+        verification on GitHub by using the correct timestamp format and encoding.
+        
+    .PARAMETER RepositoryName
+        The name of the GitHub repository
+        
+    .PARAMETER BranchName
+        The branch containing the commit to sign
+        
+    .PARAMETER GitHubTokenInstance
+        A PSCustomObject containing a 'token' property with GitHub Personal Access Token (PAT)
+        
+    .PARAMETER OwnerName
+        GitHub username/organization. Defaults to "DivyaGhai"
+        
+    .EXAMPLE
+        $token = [PSCustomObject]@{
+            token = "ghp_your_token"
+        }
+        
+        Set-GitHubSignLatestCommit -RepositoryName "my-repo" -BranchName "main" -GitHubTokenInstance $token -OwnerName "my-username"
+    #>
+    param (
+        [Parameter(Mandatory = $true)][string]$RepositoryName,
+        [Parameter(Mandatory = $true)][string]$BranchName,
+        [Parameter(Mandatory = $true)][PSCustomObject]$GitHubTokenInstance,
+        [Parameter()][string]$OwnerName = "DivyaGhai"
+    )
+
+    $headers = @{
+        Authorization = "Bearer $($GitHubTokenInstance.token)"
+        Accept        = "application/vnd.github+json"
+        "User-Agent"  = "PowerShell-GitHubClient"
+    }    $branchUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/branches/$BranchName"
+    $branch = Invoke-RestMethod -Uri $branchUrl -Headers $headers
+
+    # Get commit data from the latest commit on the branch
+    $commitData = Invoke-RestMethod -Uri $branch.commit.url -Headers $headers
+
+    $commitTree = $commitData.commit.tree.sha
+    $parentSha = $commitData.parents[0].sha
+    $author = $commitData.commit.author
+    $committer = $commitData.commit.committer
+    
+    # Parse the dates and convert to proper Git timestamp format
+    $authorDate = [DateTime]::Parse($author.date)
+    $committerDate = [DateTime]::Parse($committer.date)
+    
+    # Convert to Git timestamp format (Unix timestamp with timezone offset)
+    $authorGitDate = ConvertTo-GitTimestamp -dateTime $authorDate
+    $committerGitDate = ConvertTo-GitTimestamp -dateTime $committerDate
+    
+    Write-Host "Author date: $($author.date) -> $authorGitDate"
+    Write-Host "Committer date: $($committer.date) -> $committerGitDate"
+    
+    # Create commit text in Git format (IMPORTANT: line endings must be LF only)
+    $commitTextLines = @(
+        "tree $commitTree",
+        "parent $parentSha",
+        "author $($author.name) <$($author.email)> $authorGitDate",
+        "committer $($committer.name) <$($committer.email)> $committerGitDate",
+        "",
+        "$($commitData.commit.message)"
+    )
+    
+    # Join the commit text lines with LF only
+    $commitText = ($commitTextLines -join "`n") + "`n"
+    # Remove any accidental carriage returns to ensure LF only
+    $commitText = $commitText -replace "`r", ""
+    $utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
+    
+    Write-Host "===== COMMIT TEXT BEING SIGNED ====="
+    Write-Host $commitText
+    Write-Host "===== END COMMIT TEXT ====="
+
+    # Sign the commit text with GPG
+    $tempPath = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($tempPath, $commitText, $utf8NoBomEncoding)
+
+    $signature = & gpg --armor --sign --default-key $author.email --detach-sign --output - $tempPath
+    $formattedSignature = ($signature -join "`n") + "`n"
+    
+    # Remove any potential carriage returns that might cause verification issues
+    $formattedSignature = $formattedSignature -replace "`r", ""
+    
+    # Get local timezone offset for API payload
+    $tzOffset = Get-LocalTimezoneOffset
+    
+    # Create author and committer objects with consistent date format for API
+    $authorObject = @{
+        name  = $author.name
+        email = $author.email
+        date  = $authorDate.ToString("yyyy-MM-ddTHH:mm:ss") + $tzOffset
+    }
+    
+    $committerObject = @{
+        name  = $committer.name
+        email = $committer.email
+        date  = $committerDate.ToString("yyyy-MM-ddTHH:mm:ss") + $tzOffset
+    }
+    
+    Write-Host "Author JSON date: $($authorObject.date)"
+    Write-Host "Committer JSON date: $($committerObject.date)"
+    
+    # Create the payload for GitHub API
+    $signedCommit = @{
+        message    = $commitData.commit.message
+        tree       = $commitTree
+        parents    = @($parentSha)
+        author     = $authorObject
+        committer  = $committerObject
+        signature  = $formattedSignature
+    }
+    
+    $createUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/git/commits"
+    
+    # Convert to JSON and display for debugging
+    $jsonPayload = $signedCommit | ConvertTo-Json -Depth 10 
+    Write-Host "===== GITHUB API PAYLOAD ====="
+    Write-Host $jsonPayload
+    Write-Host "===== END GITHUB API PAYLOAD ====="
+    
+    # Create the new commit with the signature
+    $newCommit = Invoke-RestMethod -Uri $createUrl -Method POST -Headers $headers `
+        -Body $jsonPayload `
+        -ContentType "application/json"
+
+    # Now move the branch to point to new commit
+    $updateRefUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/git/refs/heads/$BranchName"
+    $updatePayload = @{ sha = $newCommit.sha; force = $true } | ConvertTo-Json
+    Invoke-RestMethod -Uri $updateRefUrl -Method POST -Headers $headers -Body $updatePayload -ContentType "application/json"
+
+    # Clean up temp file
+    Remove-Item $tempPath -Force
+    
+    # Return success message with commit SHA
+    Write-Host "✅ Signed and updated branch to commit: $($newCommit.sha)"
+    
+    # Return the new commit data
+    return $newCommit
+}
