@@ -15,7 +15,7 @@ if (-not $env:GITHUB_TOKEN) {
 }
 
 # Load the GitHub Sign Commit script
-. "$PSScriptRoot\Set-GitHubSignCommit.ps1"
+. .\Set-GitHubSignCommit.ps1
 
 # Create token object
 $GitHubTokenInstance = [PSCustomObject]@{
