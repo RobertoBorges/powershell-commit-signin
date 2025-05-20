@@ -60,9 +60,7 @@ function Set-GitHubSignLatestCommit {
 
     # Get commit data from the branch latest commit
     Write-Host "Fetching commit data..."
-    $commitData = Invoke-RestMethod -Uri $branch.commit.url -Headers $headers
-
-    # Store the exact raw data from GitHub API to ensure consistency
+    $commitData = Invoke-RestMethod -Uri $branch.commit.url -Headers $headers    # Store the exact raw data from GitHub API to ensure consistency
     $commitTree = $commitData.commit.tree.sha
     $author = $commitData.commit.author
     $committer = $commitData.commit.committer
@@ -72,18 +70,52 @@ function Set-GitHubSignLatestCommit {
     $originalAuthorDate = $author.date
     $originalCommitterDate = $committer.date
     
-    # Parse dates from string to DateTime objects
+    # Ensure our timestamp matches exactly what GitHub will validate against
+    # GitHub accepts ISO format dates (e.g., 2025-05-20T20:46:40Z) but validates
+    # signatures against Git formatted timestamps (1747774000 +0000)    # Parse dates from string to DateTime objects
+    # CRITICAL: We need to ensure the timestamps match EXACTLY what GitHub expects
+    
+    # First, parse our dates properly to have a fallback
     $authorDate = [DateTime]::Parse($originalAuthorDate).ToUniversalTime()
     $committerDate = [DateTime]::Parse($originalCommitterDate).ToUniversalTime()
-    
-    # IMPORTANT: Generate timestamps in UTC format (+0000) for consistency
+
+    # Default Git timestamp generation - will be used if we can't extract GitHub's format
     $authorGitDate = ConvertTo-GitTimestamp -dateTime $authorDate -UseUtc
     $committerGitDate = ConvertTo-GitTimestamp -dateTime $committerDate -UseUtc
     
-    Write-Host "Author date: $($originalAuthorDate) -> $authorGitDate"
-    Write-Host "Committer date: $($originalCommitterDate) -> $committerGitDate"
+    # Try to extract GitHub's exact verification timestamp format
+    try {
+        # Get the latest commit data from GitHub to see what timestamps they use for verification
+        $latestCommitUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/commits/$($branch.commit.sha)"
+        $latestCommit = Invoke-RestMethod -Uri $latestCommitUrl -Headers $headers
+        
+        # Check if there's a verification payload we can use as reference
+        if ($latestCommit.commit.verification -and $latestCommit.commit.verification.payload) {
+            $payloadLines = $latestCommit.commit.verification.payload -split "`n"
+            $authorLine = $payloadLines | Where-Object { $_ -match "^author " }
+            
+            # Extract timestamp format if available
+            if ($authorLine -and $authorLine -match ' (\d+) (\+|-)\d{4}$') {
+                $referenceTimestamp = $matches[1]
+                Write-Host "Found GitHub verification reference timestamp: $referenceTimestamp"
+                
+                # Use this timestamp as a reference for formatting ours
+                # We'll use the same offset from UTC (always +0000 in our case)
+                $authorGitDate = "$referenceTimestamp +0000"
+                $committerGitDate = "$referenceTimestamp +0000"
+            }
+        }
+    }
+    catch {
+        Write-Host "Failed to extract GitHub timestamp format, using default: $_"
+        # We'll use the default timestamps we calculated earlier
+    }
     
-    # Start building commit text lines
+    Write-Host "Author date: $($originalAuthorDate) -> $authorGitDate"
+    Write-Host "Committer date: $($originalCommitterDate) -> $committerGitDate"    # Start building commit text exactly as Git formats it - matching the exact format Git uses
+    # Format must exactly match: git cat-file -p <commit-sha>
+    
+    # Build the header part
     $commitTextLines = @("tree $commitTree")
     
     # Handle all parents (important for merge commits)
@@ -91,16 +123,18 @@ function Set-GitHubSignLatestCommit {
         $commitTextLines += "parent $($parent.sha)"
     }
     
-    # Add author and committer lines (both are required with UTC timestamp)
+    # Add author and committer lines (both are required with Git timestamp format)
+    # Format: name <email> timestamp timezone
+    # Example: John Doe <john@example.com> 1586970986 +0200
     $commitTextLines += "author $($author.name) <$($author.email)> $authorGitDate"
     $commitTextLines += "committer $($committer.name) <$($committer.email)> $committerGitDate"
-    $commitTextLines += ""
-    $commitTextLines += "$message"
     
-    Write-Host "Preparing commit for signing with GPG..."
-    $commitText = ($commitTextLines -join "`n") + "`n"
+    # Get raw commit text - EXACT same format that Git would use
+    # CRITICAL: One blank line between headers and message
+    # No trailing newline after the message
+    $commitText = ($commitTextLines -join "`n") + "`n`n" + $message
     
-    # Remove any accidental carriage returns to ensure LF only
+    # Remove any accidental carriage returns to ensure LF only (Git uses LF)
     $commitText = $commitText -replace "`r", ""
     $utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
     
@@ -110,15 +144,26 @@ function Set-GitHubSignLatestCommit {
 
     # Write the commit text to a temporary file
     $tempPath = [System.IO.Path]::GetTempFileName()
-    [System.IO.File]::WriteAllText($tempPath, $commitText, $utf8NoBomEncoding)
-
-    # Sign the commit with GPG
+    [System.IO.File]::WriteAllText($tempPath, $commitText, $utf8NoBomEncoding)    # Sign the commit with GPG
     Write-Host "Signing with GPG..."
     $signature = & gpg --armor --sign --default-key $author.email --detach-sign --output - $tempPath
-    $formattedSignature = ($signature -join "`n") + "`n"
     
-    # Remove any potential carriage returns that might cause verification issues
-    $formattedSignature = $formattedSignature -replace "`r", ""
+    # Format the signature exactly as Git expects it
+    # The signature should have a space prefix on each line except the first and last
+    $signatureLines = $signature -replace "`r", ""
+    $formattedSignatureLines = @()
+    
+    for ($i = 0; $i -lt $signatureLines.Count; $i++) {
+        if ($i -eq 0 -or $i -eq ($signatureLines.Count - 1)) {
+            # First and last line don't have a space
+            $formattedSignatureLines += $signatureLines[$i]
+        } else {
+            # Add a space at the beginning of each line (except first and last)
+            $formattedSignatureLines += " " + $signatureLines[$i]
+        }
+    }
+    
+    $formattedSignature = $formattedSignatureLines -join "`n"
     
     # Create author and committer objects for API payload - use EXACT same format as GitHub API
     $authorObject = @{
