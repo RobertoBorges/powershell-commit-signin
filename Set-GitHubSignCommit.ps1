@@ -23,11 +23,24 @@ function Set-GitHubSignLatestCommit {
     $author = $commitData.commit.author
     $committer = $commitData.commit.committer
 
+    function Get-TimezoneOffsetString($dateObj) {
+        $offset = $dateObj.ToString("zzz").Replace(":", "")
+        return $offset
+    }
+
+    $authorDateObj = Get-Date $author.date
+    $committerDateObj = Get-Date $committer.date
+    $authorOffset = Get-TimezoneOffsetString $authorDateObj
+    $committerOffset = Get-TimezoneOffsetString $committerDateObj
+
+    $authorTimestamp = [Math]::Floor((Get-Date $author.date -UFormat %s))
+    $committerTimestamp = [Math]::Floor((Get-Date $committer.date -UFormat %s))
+
     $commitTextLines = @(
         "tree $commitTree",
         "parent $parentSha",
-        "author $($author.name) <$($author.email)> $(Get-Date $author.date -UFormat %s) -0000",
-        "committer $($committer.name) <$($committer.email)> $(Get-Date $committer.date -UFormat %s) -0000",
+        "author $($author.name) <$($author.email)> $authorTimestamp $authorOffset",
+        "committer $($committer.name) <$($committer.email)> $committerTimestamp $committerOffset",
         "",
         "$($commitData.commit.message)"
     )
