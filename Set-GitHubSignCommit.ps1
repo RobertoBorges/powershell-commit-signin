@@ -37,13 +37,10 @@ function Set-GitHubSignLatestCommit {
 
     $tempPath = [System.IO.Path]::GetTempFileName()
     [System.IO.File]::WriteAllText($tempPath, $commitText, $utf8NoBomEncoding)
-    Write-Host "Preparing file to be signed $($tempPath)"
-
-    $signature = & gpg --armor --sign --default-key $author.email --detach-sign --output - $tempPath
-    Remove-Item $tempPath
 
     $signature = & gpg --armor --sign --default-key $author.email --detach-sign --output - $tempPath
     $formattedSignature = ($signature -join "`n") + "`n"
+    
     # Remove any potential carriage returns that might cause verification issues
     $formattedSignature = $formattedSignature -replace "`r", ""
 
@@ -66,5 +63,6 @@ function Set-GitHubSignLatestCommit {
     $updatePayload = @{ sha = $newCommit.sha; force = $true } | ConvertTo-Json
     Invoke-RestMethod -Uri $updateRefUrl -Method POST -Headers $headers -Body $updatePayload -ContentType "application/json"
 
+    Remove-Item $tempPath -Force
     Write-Host "✅ Signed and updated branch to commit: $($newCommit.sha)"
 }
