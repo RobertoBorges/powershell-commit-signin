@@ -1,10 +1,17 @@
-
 # Helper function to get timezone offset in Git format
 function Get-GitTimezoneOffset {
-    param ([DateTime]$dateTime = (Get-Date))
+    param (
+        [DateTime]$dateTime = (Get-Date),
+        [switch]$IncludeColon = $false
+    )
     
-    # Get the timezone offset in the format +0000 or -0000
-    $offset = $dateTime.ToString("zzz").Replace(":", "")
+    # Get the timezone offset in the proper format
+    $offset = $dateTime.ToString("zzz")  # Format like +00:00
+    
+    if (-not $IncludeColon) {
+        $offset = $offset.Replace(":", "")  # Format like +0000 for Git
+    }
+    
     return $offset
 }
 
@@ -15,7 +22,7 @@ function ConvertTo-GitTimestamp {
     # Get Unix timestamp (seconds since epoch)
     $unixTimestamp = [int][double]::Parse((Get-Date -Date $dateTime -UFormat %s))
     
-    # Get timezone offset
+    # Get timezone offset without colon (Git format)
     $tzOffset = Get-GitTimezoneOffset -dateTime $dateTime
     
     # Return in Git format: UNIX_TIMESTAMP TIMEZONE_OFFSET
@@ -40,7 +47,7 @@ function Set-GitHubSignLatestCommit {
     $branchUrl = "https://api.github.com/repos/$OwnerName/$RepositoryName/branches/$BranchName"
     $branch = Invoke-RestMethod -Uri $branchUrl -Headers $headers
 
-    # Get commit data from the branch's latest commit
+    # Get commit data from the branch latest commit
     Write-Host "Fetching commit data..."
     $commitData = Invoke-RestMethod -Uri $branch.commit.url -Headers $headers
 
@@ -96,20 +103,22 @@ function Set-GitHubSignLatestCommit {
     # Remove any potential carriage returns that might cause verification issues
     $formattedSignature = $formattedSignature -replace "`r", ""
 
-    # Get local timezone offset for API payload
-    $tzOffset = Get-GitTimezoneOffset -dateTime $authorDate
+    # Get timezone offsets for different formats
+    # Use WITH colon for GitHub API (ISO 8601 requires colon in timezone offset)
+    $authorIsoTzOffset = Get-GitTimezoneOffset -dateTime $authorDate -IncludeColon
+    $committerIsoTzOffset = Get-GitTimezoneOffset -dateTime $committerDate -IncludeColon
     
     # Create author and committer objects with consistent date format
     $authorObject = @{
         name  = $author.name
         email = $author.email
-        date  = $authorDate.ToString("yyyy-MM-ddTHH:mm:ss") + $tzOffset  # ISO format with timezone
+        date  = $authorDate.ToString("yyyy-MM-ddTHH:mm:ss") + $authorIsoTzOffset
     }
     
     $committerObject = @{
         name  = $committer.name
         email = $committer.email
-        date  = $committerDate.ToString("yyyy-MM-ddTHH:mm:ss") + $tzOffset  # ISO format with timezone
+        date  = $committerDate.ToString("yyyy-MM-ddTHH:mm:ss") + $committerIsoTzOffset
     }
     
     Write-Host "Author API date: $($authorObject.date)"
@@ -141,9 +150,7 @@ function Set-GitHubSignLatestCommit {
     Write-Host "===== END GITHUB API PAYLOAD ====="
     
     # Create the new commit with the signature
-    $newCommit = Invoke-RestMethod -Uri $createUrl -Method POST -Headers $headers `
-        -Body $jsonPayload `
-        -ContentType "application/json"
+    $newCommit = Invoke-RestMethod -Uri $createUrl -Method POST -Headers $headers -Body $jsonPayload -ContentType "application/json"
 
     # Now move the branch to point to new commit
     Write-Host "Updating branch reference to new commit..."
