@@ -30,17 +30,15 @@ function Set-GitHubSignLatestCommit {
 
     $authorDateObj = Get-Date $author.date
     $committerDateObj = Get-Date $committer.date
-    $authorOffset = Get-TimezoneOffsetString $authorDateObj
-    $committerOffset = Get-TimezoneOffsetString $committerDateObj
 
-    $authorTimestamp = [Math]::Floor((Get-Date $author.date -UFormat %s))
-    $committerTimestamp = [Math]::Floor((Get-Date $committer.date -UFormat %s))
+    $authorTimestamp = $authorDateObj.ToString("yyyy-MM-ddTHH:mm:ssK")
+    $committerTimestamp = $committerDateObj.ToString("yyyy-MM-ddTHH:mm:ssK")
 
     $commitTextLines = @(
         "tree $commitTree",
-        "parent $parentSha",
-        "author $($author.name) <$($author.email)> $authorTimestamp $authorOffset",
-        "committer $($committer.name) <$($committer.email)> $committerTimestamp $committerOffset",
+        "parents $parentSha",
+        "author $($author.name) <$($author.email)> $authorTimestamp",
+        "committer $($committer.name) <$($committer.email)> $committerTimestamp",
         "",
         "$($commitData.commit.message)"
     )
@@ -57,12 +55,24 @@ function Set-GitHubSignLatestCommit {
     # Remove any potential carriage returns that might cause verification issues
     $formattedSignature = $formattedSignature -replace "`r", ""
 
+    $authorObject = @{
+        name  = $author.name
+        email = $author.email
+        date  = "$authorTimestamp"
+    }
+
+    $committerObject = @{
+        name  = $committer.name
+        email = $committer.email
+        date  = "$committerTimestamp"
+    }
+
     $signedCommit = @{
         message    = $commitData.commit.message
         tree       = $commitTree
         parents    = @($parentSha)
-        author     = $author
-        committer  = $committer
+        author     = $authorObject
+        committer  = $committerObject
         signature  = $formattedSignature
     }
 
