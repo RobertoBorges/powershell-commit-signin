@@ -1,5 +1,1 @@
-<<<<<<< HEAD
-script test 9
-=======
-script test 8
->>>>>>> 42ae11406378bdaf87d5ee97d1ebea1244f053bd
+script test 10
