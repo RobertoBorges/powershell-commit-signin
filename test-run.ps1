@@ -44,10 +44,17 @@ try {
                                          -BranchName $BranchName `
                                          -GitHubTokenInstance $GitHubTokenInstance `
                                          -OwnerName $OwnerName
-                                         
-    Write-Host "✅ Signing successful!" -ForegroundColor Green
+                                           Write-Host "✅ Signing successful!" -ForegroundColor Green
     Write-Host "New commit SHA: $($results.sha)"
     Write-Host "Visit https://github.com/$OwnerName/$RepositoryName/commit/$($results.sha) to verify the signature"
+    
+    # Wait a moment for GitHub to process the commit
+    Write-Host "Waiting 3 seconds for GitHub to process the commit..." -ForegroundColor Cyan
+    Start-Sleep -Seconds 3
+    
+    # Verify the signature
+    Write-Host "`nVerifying signature..." -ForegroundColor Cyan
+    & "$PSScriptRoot\test-verify.ps1" -CommitSHA $results.sha
 } 
 catch {
     Write-Host "❌ Error signing commit:" -ForegroundColor Red
